@@ -9,6 +9,14 @@ set(CMAKE_CXX_FLAGS, "${CXX_FLAGS}")
 
 set(sources src/main.cpp)
 
+##########################################################################
+
+# my local search paths
+include_directories(_externalDeps/include)
+link_directories(_externalDeps/lib)
+
+##########################################################################
+
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin") 
 
