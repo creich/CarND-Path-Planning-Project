@@ -14,8 +14,11 @@ using nlohmann::json;
 using std::string;
 using std::vector;
 
+#define NUM_WAYPOINTS 75   // number of waypoints to be calculated during path planning
+
 int lane = 1;
-double ref_vel = 49.5;  // mph
+double ref_vel = 0.0;  // start with 0 mph
+
 
 int main() {
     uWS::Hub h;
@@ -99,8 +102,47 @@ int main() {
                      *   sequentially every .02 seconds
                      */
 
-                    // ====== START smoothen the path using splines ======
                     int prev_size = previous_path_x.size();
+
+                    // ====== START check for other cars ======
+                    if (prev_size > 0) {
+                        // TODO check this statement!
+                        car_s = end_path_s;
+                    }
+
+                    bool too_close = false;
+
+                    for ( int i = 0; i < sensor_fusion.size(); i++) {
+                        // any car in my lane?
+                        float d = sensor_fusion[i][6];
+                        if (d < (2 + 4*lane + 2) && d > (2 + 4*lane -2)) {
+                            double vx = sensor_fusion[i][3];
+                            double vy = sensor_fusion[i][4];
+                            double check_speed = sqrt(vx*vx + vy*vy);
+                            double check_car_s = sensor_fusion[i][5];
+
+                            check_car_s += ((double)prev_size * .02 * check_speed);
+                            if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
+                                // TODO do some logic here....
+                                too_close = true;
+
+                                // switch lanes if a slower car is ahead of us
+                                if ( lane > 0) {
+                                    lane = 0;
+                                }
+                            }
+                        }
+                    }
+
+                    // TODO try to move speed inc/dec into path point calculation later on to make it more effective
+                    if (too_close) {
+                        ref_vel -= 0.224;
+                    } else if (ref_vel < 49.5) {
+                        ref_vel += 0.224;
+                    }
+
+                    // ====== END check for other cars ======
+                    // ====== START smoothen the path using splines ======
 
                     // temporary points (will be in a car related coordinate system after shifting)
                     vector<double> ptsx;
@@ -111,7 +153,7 @@ int main() {
                     double ref_yaw = deg2rad(car_yaw);
 
                     // If previous size is almost empty, use the car as starting reference
-                    if (prev_size<2) {
+                    if (prev_size < 2) {
                         // Calculate the cars previous x and y position to create a path tangent to the car
                         double prev_car_x = car_x - cos(car_yaw);
                         double prev_car_y = car_y - sin(car_yaw);
@@ -180,8 +222,9 @@ int main() {
 
                     double x_add_on = 0;
 
-                    // fill up the rest of our path planner after filling it with previous points, so we'll allways have 50 points
-                    for(int i = 1; i <= 50 - previous_path_x.size(); i++) {
+                    // fill up the rest of our path planner after filling it with previous points, so we'll allways have NUM_WAYPOINTS points
+                    for(int i = 1; i <= NUM_WAYPOINTS - previous_path_x.size(); i++) {
+                        // TODO speed changes might be put into this loop
                         // deviding ref_vel (reference velocity) by 2.24 to convert it to m/s from mph
                         double N = (target_dist / (.02 * ref_vel / 2.24));
                         double x_point = x_add_on + (target_x) / N;
