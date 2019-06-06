@@ -44,8 +44,10 @@ enum STATES {
 
 int lane = 1;
 double last_vel = 0;    // saving the latest calculated velocity, since telemetry data (like car_speed) is jumping unreliably sometimes
-double ref_vel = 49.5;  // try to reach 49.5 mph asap
-const double overall_max_speed = 49.6;  // for some reason the simulator returns speed in mph while expecting it in m/s
+// i try to use the metric system, since the simulator is expecting velocity in m/s
+// even though, for some reason the simulator returns speed in mph
+double ref_vel = 22.3;  // try to reach 22.3 m/s (~ 49.95 mph) asap
+const double overall_max_speed = 22.3;
 STATES current_state = STATES::KEEP_LANE;   // default state is KEEP_LANE
 
 int main() {
@@ -111,6 +113,9 @@ int main() {
                     double car_d = j[1]["d"];
                     double car_yaw = j[1]["yaw"];
                     double car_speed = j[1]["speed"];
+                    // deviding car_speed by 2.24 to convert it from mph to m/s
+                    car_speed /= 2.24;
+
 
                     // Previous path data given to the Planner
                     auto previous_path_x = j[1]["previous_path_x"];
@@ -143,46 +148,43 @@ int main() {
                         // check for other cars within my lane
                         // reduce speed to maintain safe distance (if necessary)
                         // change state to prepare lane change if possible
-                        //  maybe the last 2 steps are both handeled by the PLCx state?!?!??
+                        // maybe the last 2 steps are both handeled by the PLCx state?!?!??
 
                         bool too_close = false;
-                        double current_max_speed = overall_max_speed;
+                        ref_vel = overall_max_speed;    // try to go as fast as legal
 
                         for ( int i = 0; i < sensor_fusion.size(); i++) {
                             Car oCar = {sensor_fusion[i][0], sensor_fusion[i][1], sensor_fusion[i][2], sensor_fusion[i][3], sensor_fusion[i][4], sensor_fusion[i][5], sensor_fusion[i][6]};
                             // any car in my lane?
-                            if (oCar.d < (2 + 4*lane + 2) && oCar.d > (2 + 4*lane -2)) {
+                            if (oCar.d < (2 + 4*lane + 2) && oCar.d > (2 + 4*lane - 2)) {
                                 double check_speed = sqrt(oCar.vx*oCar.vx + oCar.vy*oCar.vy);
                                 double check_car_s = oCar.s;
 
                                 check_car_s += ((double)prev_size * .02 * check_speed);
                                 // car is in front of me
                                 if (check_car_s > car_s) {
+                                    // distance is smaller than 33m
+                                    if ((check_car_s - car_s) < 33) {
+                                        // TODO start lane change preparation
+                                        ref_vel = check_speed;
+                                    }
                                     // distance is smaller than 30m
                                     if ((check_car_s - car_s) < 30) {
-                                        // TODO start lane change preparation
-                                        // switch lanes if a slower car is ahead of us
-                                        if ( lane > 0) {
-                                            lane = 0;
-                                        } else if (lane == 0) {
-                                            lane = 1;
-                                        }
-                                        current_max_speed = check_speed;
-//                                    }
-                                    // distance is smaller than 15m
-//                                    if ((check_car_s - car_s) < 15) {
                                         too_close = true;
-                                        current_max_speed = check_speed;
+                                        ref_vel = check_speed - 0.19;
                                     }
                                 }
                             }
                         }
-                        // TODO try to move speed inc/dec into path point calculation later on to make it more effective
-                        if (too_close) {
-                            ref_vel = current_max_speed - 0.224;
-                        } else if (ref_vel < current_max_speed) {
-                            ref_vel = current_max_speed;
-                        }
+
+//                        // switch lanes if a slower car is ahead of us
+//                        if ( lane > 0) {
+//                            lane = 0;
+//                            std::cout << "shift lane to: " << lane << std::endl;
+//                        } else if (lane == 0) {
+//                            lane = 1;
+//                            std::cout << "shift lane to: " << lane << std::endl;
+//                        }
                     }
 
                     // ====== END check for other cars ======
@@ -271,20 +273,19 @@ int main() {
                     for(int i = 1; i <= NUM_WAYPOINTS - previous_path_x.size(); i++) {
                         // slightly adapt vleocity till we reach final ref_vel
                         if (next_vel < ref_vel) {
-                            next_vel += 0.224;
+                            next_vel += 0.19;
                             if (next_vel > ref_vel) {
                                 next_vel = ref_vel;
                             }
                         } else if (next_vel > ref_vel) {
-                            next_vel -= 0.224;
+                            next_vel -= 0.19;
                             if (next_vel < 0) {
                                 next_vel = 0;
                             }
                         }
 
-                        // deviding ref_vel (reference velocity) by 2.24 to convert it to m/s from mph
                         // factor .02 is here, because the simulator expects a waypoint for each 0.02 seconds
-                        double N = (target_dist / (.02 * next_vel / 2.24));
+                        double N = (target_dist / (.02 * next_vel));
                         double x_point = x_add_on + (target_x) / N;
                         double y_point = s(x_point);
 
