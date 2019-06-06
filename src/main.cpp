@@ -216,6 +216,9 @@ int main() {
                                 brake_factor *= brake_factor;
                                 ref_vel = state.speedOfNextCar - (0.19 * brake_factor);
                             }
+                            if (state.distanceToNextCar < 10) {
+                                ref_vel = 0;                        // emergency brake
+                            }
                         }
 
                         // TODO introduce some long distance checks. maybe we could switch lanes before ending up stuck on
