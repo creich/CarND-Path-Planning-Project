@@ -30,6 +30,7 @@ struct Car {
 // States
 enum STATES {
     KEEP_LANE,
+    PLC,        // prepare lane change (decission which lane to go for is made here)
     PLCR,       // prepare lane change right
     PLCL,       // prepare lane change left
     CLR,        // change lane right
@@ -40,14 +41,54 @@ enum STATES {
 
 // ===== END =====
 
+// ===== START helper functions =====
+// TODO move them to helpers !?!?
+
+struct LaneState {
+    bool isFree;
+    double distanceToNextCar;
+    double speedOfNextCar;
+};
+
+LaneState checkLane(int lane, double longitude, double prev_size, vector<Car> other_cars) {
+    // NOTE in real world, a simple 1000 as start value might cause problems!
+    LaneState state = {true, 1000, 1000};
+
+    for ( int i = 0; i < other_cars.size(); i++) {
+        // TODO check if there is some special handling necessary, since we stupidly run through a list of all sensor data... data might overlap!
+        Car oCar = other_cars[i];
+        // any car on the specified lane?
+        if ( (oCar.d < (2 + 4*lane + 2)) && (oCar.d > (2 + 4*lane - 2)) ) {
+
+            double check_speed = sqrt(oCar.vx*oCar.vx + oCar.vy*oCar.vy);
+            double check_car_s = oCar.s;
+            check_car_s += ((double)prev_size * .02 * check_speed);
+            double check_distance = check_car_s - longitude;
+
+            // car is in the lane of question ahead of the given Frenet longitude s
+            if (check_car_s > longitude && check_distance < state.distanceToNextCar) {
+                state.isFree = false;
+                state.distanceToNextCar = check_distance;
+                state.speedOfNextCar = check_speed;
+            }
+        }
+    }
+
+    return state;
+}
+
+// ===== END =====
+
 #define NUM_WAYPOINTS 75   // number of waypoints to be calculated during path planning
+#define MAX_LANE_NUMBER 2   // we've 3 possible lanes numbered from 0 - 2
+                            // (in a real world application this number should be adapted according to the given real world)
 
 int lane = 1;
 double last_vel = 0;    // saving the latest calculated velocity, since telemetry data (like car_speed) is jumping unreliably sometimes
 // i try to use the metric system, since the simulator is expecting velocity in m/s
 // even though, for some reason the simulator returns speed in mph
-double ref_vel = 22.3;  // try to reach 22.3 m/s (~ 49.95 mph) asap
-const double overall_max_speed = 22.3;
+double ref_vel = 22.2;  // try to reach 22.3 m/s (~ 49.95 mph) asap
+const double overall_max_speed = 22.2;
 STATES current_state = STATES::KEEP_LANE;   // default state is KEEP_LANE
 
 int main() {
@@ -127,6 +168,16 @@ int main() {
                     // Sensor Fusion Data, a list of all other cars on the same side
                     //   of the road.
                     auto sensor_fusion = j[1]["sensor_fusion"];
+                    // convert sensor data into Car struct so i can use it as function parameter later
+                    vector<Car> other_cars;
+                    // TODO find out why the following 2 lines don't work, while the 2 after do!
+//                    for ( int i = 0; i < sensor_fusion.size(); i++) {
+//                        Car oCar = {sensor_fusion[i][0], sensor_fusion[i][1], sensor_fusion[i][2], sensor_fusion[i][3], sensor_fusion[i][4], sensor_fusion[i][5], sensor_fusion[i][6]};
+                    // thx for the following 2 lines to Eddie Forson ( https://github.com/kenshiro-o/CarND-Path-Planning-Project/blob/master/src/main.cpp#L165 )
+                    for (auto s_data : sensor_fusion) {
+                        Car oCar = {s_data[0], s_data[1], s_data[2], s_data[3], s_data[4], s_data[5], s_data[6]};
+                        other_cars.push_back(oCar);
+                    }
 
                     json msgJson;
 
@@ -143,6 +194,7 @@ int main() {
                     }
                     // ====== START check for other cars ======
 
+                    // TODO replace if-then-else with switch statement?!?!?
                     if (current_state == STATES::KEEP_LANE) {
                         // try to maintain current speed
                         // check for other cars within my lane
@@ -150,41 +202,120 @@ int main() {
                         // change state to prepare lane change if possible
                         // maybe the last 2 steps are both handeled by the PLCx state?!?!??
 
-                        bool too_close = false;
-                        ref_vel = overall_max_speed;    // try to go as fast as legal
-
-                        for ( int i = 0; i < sensor_fusion.size(); i++) {
-                            Car oCar = {sensor_fusion[i][0], sensor_fusion[i][1], sensor_fusion[i][2], sensor_fusion[i][3], sensor_fusion[i][4], sensor_fusion[i][5], sensor_fusion[i][6]};
-                            // any car in my lane?
-                            if (oCar.d < (2 + 4*lane + 2) && oCar.d > (2 + 4*lane - 2)) {
-                                double check_speed = sqrt(oCar.vx*oCar.vx + oCar.vy*oCar.vy);
-                                double check_car_s = oCar.s;
-
-                                check_car_s += ((double)prev_size * .02 * check_speed);
-                                // car is in front of me
-                                if (check_car_s > car_s) {
-                                    // distance is smaller than 33m
-                                    if ((check_car_s - car_s) < 33) {
-                                        // TODO start lane change preparation
-                                        ref_vel = check_speed;
-                                    }
-                                    // distance is smaller than 30m
-                                    if ((check_car_s - car_s) < 30) {
-                                        too_close = true;
-                                        ref_vel = check_speed - 0.19;
-                                    }
-                                }
+                        LaneState state = checkLane(lane, car_s, prev_size, other_cars);
+                        if (state.isFree) {
+                            ref_vel = overall_max_speed;    // try to go as fast as legal
+                        } else {
+                            if (state.distanceToNextCar < 33) {
+                                // TODO start lane change preparation
+                                current_state = STATES::PLC;
+                                ref_vel = state.speedOfNextCar;
+                            }
+                            if (state.distanceToNextCar < 30) {
+                                ref_vel = state.speedOfNextCar - 0.19;
                             }
                         }
 
-//                        // switch lanes if a slower car is ahead of us
-//                        if ( lane > 0) {
-//                            lane = 0;
-//                            std::cout << "shift lane to: " << lane << std::endl;
-//                        } else if (lane == 0) {
-//                            lane = 1;
-//                            std::cout << "shift lane to: " << lane << std::endl;
-//                        }
+                    } else if (current_state == STATES::PLC) {
+                        std::cout << "PLC" << std::endl;
+                        // for the sake of a fast and efficient travvel we try to pick the fastest lane possible
+                        //
+                        // which lane are we in right now?
+                        // how are the other lanes populated?
+                        //      we check distance and speed of the cars in other lanes
+                        // once we've made a decission, we switch to the specific PLCx state
+
+                        // simplified way of abstract lane handling. we assume that the car is either
+                        // on the left or right side of a multilane environment or somewhere in the
+                        // middle. if so, we assume that there is at least one lane to go on each side.
+                        if (lane == 0) {                            // most left lane
+                            // check if the RIGHT lane is free or any car there is faster than our
+                            // current possible speed. if so, prepare to witch lanes to the RIGHT
+                            // if neither is true, just keep the current lane
+
+                            // TODO maybe set longitude parameter to something behind our current position to get some safty distance before changing lanes
+                            LaneState state = checkLane(lane + 1, car_s, prev_size, other_cars);
+                            if (state.isFree) {
+                                current_state = STATES::PLCR;
+                            } else {
+                                // the car in the other lane is faster, so we try to change the lane
+                                if (state.speedOfNextCar > ref_vel) {
+                                    current_state = STATES::PLCR;
+                                } else {
+                                    current_state = STATES::KEEP_LANE;
+                                }
+                            }
+                        } else if (lane == MAX_LANE_NUMBER) {       // most right lane
+                            // check if the LEFT lane is free or any car there is faster than our
+                            // current possible speed. if so, prepare to witch lanes to the LEFT
+                            // if neither is true, just keep the current lane
+
+                            // TODO maybe set longitude parameter to something behind our current position to get some safty distance before changing lanes
+                            LaneState state = checkLane(lane - 1, car_s, prev_size, other_cars);
+                            if (state.isFree) {
+                                current_state = STATES::PLCL;
+                            } else {
+                                // the car in the other lane is faster, so we try to change the lane
+                                if (state.speedOfNextCar > ref_vel) {
+                                    current_state = STATES::PLCL;
+                                } else {
+                                    current_state = STATES::KEEP_LANE;
+                                }
+                            }
+                        } else {                                    // somewhere in the middle
+                            // check if either LEFT OR RIGHT lane is free or any car there is faster than our
+                            // current possible speed. if so, prepare to witch lanes to the faster side
+                            // if neither is true, just keep the current lane
+
+                            LaneState state_left = checkLane(lane - 1, car_s, prev_size, other_cars);
+                            LaneState state_right = checkLane(lane + 1, car_s, prev_size, other_cars);
+                            // prefer takeover on the left side
+                            if (state_left.isFree) {
+                                current_state = STATES::PLCL;
+                            } else if (state_right.isFree) {
+                                current_state = STATES::PLCR;
+                            } else {
+                                // the car in the other lane is faster, so we try to change the lane
+                                if (state_left.speedOfNextCar > ref_vel) {
+                                    current_state = STATES::PLCL;
+                                } else if (state_left.speedOfNextCar > ref_vel) {
+                                    current_state = STATES::PLCR;
+                                } else {
+                                    current_state = STATES::KEEP_LANE;
+                                }
+                            }
+                        }
+                    // TODO introduce some kind of timing check! if a maneauver takes to much time, fall back into another state
+                    } else if (current_state == STATES::PLCL) {
+                        std::cout << "<< << << indicator LEFT" << std::endl;
+
+                        // TODO do some safty checks !!!
+                        // we now check car_s - 10 to ensure that we're at least 7m ahead of a possible car in the next lane!
+                        LaneState state_left = checkLane(lane - 1, car_s - 7, prev_size, other_cars);
+                        if (state_left.isFree || state_left.distanceToNextCar > 30) {
+                            current_state = STATES::CLL;
+                        }
+                    } else if (current_state == STATES::PLCR) {
+                        std::cout << ">> >> >> indicator RIGHT" << std::endl;
+
+                        // TODO do some safty checks !!!
+                        // we now check car_s - 10 to ensure that we're at least 7m ahead of a possible car in the next lane!
+                        LaneState state_right = checkLane(lane + 1, car_s - 7, prev_size, other_cars);
+                        if (state_right.isFree || state_right.distanceToNextCar > 30) {
+                            current_state = STATES::CLR;
+                        }
+                        current_state = STATES::CLR;
+                    // TODO ensure we stay in CLx state untill we really reached the desired lane!
+                    // otherwise the car might try to switch multiple lanes at once. and while doing that
+                    // even ignore other cars on the lanes it skips!
+                    } else if (current_state == STATES::CLL) {
+                        lane -= 1;
+                        current_state = STATES::KEEP_LANE;
+                        ref_vel = overall_max_speed;
+                    } else if (current_state == STATES::CLR) {
+                        lane += 1;
+                        current_state = STATES::KEEP_LANE;
+                        ref_vel = overall_max_speed;
                     }
 
                     // ====== END check for other cars ======
@@ -273,12 +404,12 @@ int main() {
                     for(int i = 1; i <= NUM_WAYPOINTS - previous_path_x.size(); i++) {
                         // slightly adapt vleocity till we reach final ref_vel
                         if (next_vel < ref_vel) {
-                            next_vel += 0.19;
+                            next_vel += 0.17;
                             if (next_vel > ref_vel) {
                                 next_vel = ref_vel;
                             }
                         } else if (next_vel > ref_vel) {
-                            next_vel -= 0.19;
+                            next_vel -= 0.17;
                             if (next_vel < 0) {
                                 next_vel = 0;
                             }
