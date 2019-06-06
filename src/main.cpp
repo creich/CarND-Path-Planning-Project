@@ -84,6 +84,7 @@ LaneState checkLane(int lane, double longitude, double prev_size, vector<Car> ot
                             // (in a real world application this number should be adapted according to the given real world)
 
 int lane = 1;
+int new_lane = 1;
 double last_vel = 0;    // saving the latest calculated velocity, since telemetry data (like car_speed) is jumping unreliably sometimes
 // i try to use the metric system, since the simulator is expecting velocity in m/s
 // even though, for some reason the simulator returns speed in mph
@@ -196,14 +197,13 @@ int main() {
 
                     // TODO replace if-then-else with switch statement?!?!?
                     if (current_state == STATES::KEEP_LANE) {
+                        std::cout << "KEEP_LANE" << std::endl;
                         // try to maintain current speed
                         // check for other cars within my lane
                         // reduce speed to maintain safe distance (if necessary)
-                        // change state to prepare lane change if possible
-                        // maybe the last 2 steps are both handeled by the PLCx state?!?!??
 
                         LaneState state = checkLane(lane, car_s, prev_size, other_cars);
-                        if (state.isFree) {
+                        if (state.isFree || state.distanceToNextCar >= 35) {
                             ref_vel = overall_max_speed;    // try to go as fast as legal
                         } else {
                             if (state.distanceToNextCar < 33) {
@@ -212,10 +212,17 @@ int main() {
                                 ref_vel = state.speedOfNextCar;
                             }
                             if (state.distanceToNextCar < 30) {
-                                ref_vel = state.speedOfNextCar - 0.19;
+                                double brake_factor = 30 / state.distanceToNextCar;
+                                brake_factor *= brake_factor;
+                                ref_vel = state.speedOfNextCar - (0.19 * brake_factor);
                             }
                         }
 
+                        // TODO introduce some long distance checks. maybe we could switch lanes before ending up stuck on
+                        //      slow lane. e.g. driving on the right till threshold distance to car in the same lane is reached.
+                        //      but if that happenes, we already got close to a car on the middle lane, that will block our lane
+                        //      change then.
+                        //      but with long distance checks, we might have noticed, that the left lane was free the whole time
                     } else if (current_state == STATES::PLC) {
                         std::cout << "PLC" << std::endl;
                         // for the sake of a fast and efficient travvel we try to pick the fastest lane possible
@@ -267,6 +274,7 @@ int main() {
                             // current possible speed. if so, prepare to witch lanes to the faster side
                             // if neither is true, just keep the current lane
 
+                            LaneState state = checkLane(lane, car_s, prev_size, other_cars);
                             LaneState state_left = checkLane(lane - 1, car_s, prev_size, other_cars);
                             LaneState state_right = checkLane(lane + 1, car_s, prev_size, other_cars);
                             // prefer takeover on the left side
@@ -280,6 +288,11 @@ int main() {
                                     current_state = STATES::PLCL;
                                 } else if (state_left.speedOfNextCar > ref_vel) {
                                     current_state = STATES::PLCR;
+                                }   // if distance to next car is higher than in current lane -> switch
+                                else if (state_left.distanceToNextCar > state.distanceToNextCar) {
+                                    current_state = STATES::PLCL;
+                                } else if (state_right.distanceToNextCar > state.distanceToNextCar) {
+                                    current_state = STATES::PLCR;
                                 } else {
                                     current_state = STATES::KEEP_LANE;
                                 }
@@ -290,32 +303,55 @@ int main() {
                         std::cout << "<< << << indicator LEFT" << std::endl;
 
                         // TODO do some safty checks !!!
-                        // we now check car_s - 10 to ensure that we're at least 7m ahead of a possible car in the next lane!
-                        LaneState state_left = checkLane(lane - 1, car_s - 7, prev_size, other_cars);
-                        if (state_left.isFree || state_left.distanceToNextCar > 30) {
-                            current_state = STATES::CLL;
+                        // first check (and get safe) distance to car direct in front of us!
+                        LaneState state = checkLane(lane, car_s, prev_size, other_cars);
+                        if (!state.isFree && state.distanceToNextCar < 30) {
+                            current_state = STATES::KEEP_LANE;
+                        } else if (state.isFree || state.distanceToNextCar > 35) {  // maybe the current lane got free again
+                            current_state = STATES::KEEP_LANE;
+                        } else {                                        // only continue changing lanes, if distance to car upfront is safe
+                            // we now check car_s - 10 to ensure that we're at least 10m ahead of a possible car in the next lane!
+                            LaneState state_left = checkLane(lane - 1, car_s - 10, prev_size, other_cars);
+                            if (state_left.isFree || state_left.distanceToNextCar > 30) {
+                                new_lane = lane - 1;
+                                current_state = STATES::CLL;
+                            }
                         }
                     } else if (current_state == STATES::PLCR) {
                         std::cout << ">> >> >> indicator RIGHT" << std::endl;
 
                         // TODO do some safty checks !!!
-                        // we now check car_s - 10 to ensure that we're at least 7m ahead of a possible car in the next lane!
-                        LaneState state_right = checkLane(lane + 1, car_s - 7, prev_size, other_cars);
-                        if (state_right.isFree || state_right.distanceToNextCar > 30) {
-                            current_state = STATES::CLR;
+                        // first check (and get safe) distance to car direct in front of us!
+                        LaneState state = checkLane(lane, car_s, prev_size, other_cars);
+                        if (!state.isFree && state.distanceToNextCar < 30) {
+                            current_state = STATES::KEEP_LANE;
+                        } else if (state.isFree || state.distanceToNextCar > 35) {  // maybe the current lane got free again
+                            current_state = STATES::KEEP_LANE;
+                        }else {                                        // only continue changing lanes, if distance to car upfront is safe
+                            // we now check car_s - 10 to ensure that we're at least 10m ahead of a possible car in the next lane!
+                            LaneState state_right = checkLane(lane + 1, car_s - 10, prev_size, other_cars);
+                            if (state_right.isFree || state_right.distanceToNextCar > 30) {
+                                new_lane = lane + 1;
+                                current_state = STATES::CLR;
+                            }
                         }
-                        current_state = STATES::CLR;
-                    // TODO ensure we stay in CLx state untill we really reached the desired lane!
-                    // otherwise the car might try to switch multiple lanes at once. and while doing that
-                    // even ignore other cars on the lanes it skips!
-                    } else if (current_state == STATES::CLL) {
-                        lane -= 1;
-                        current_state = STATES::KEEP_LANE;
-                        ref_vel = overall_max_speed;
-                    } else if (current_state == STATES::CLR) {
-                        lane += 1;
-                        current_state = STATES::KEEP_LANE;
-                        ref_vel = overall_max_speed;
+                    } else if (current_state == STATES::CLL || current_state == STATES::CLR) {
+                        // TODO check if separating CLL and CLR is necessary here!
+                        //      right now it's NOT. since the PLC and PLCx states take care of directions and stuff.
+                        //      here we're just making sure, that we don't switch to KEEP_LANE too soon!
+
+                        std::cout << "current_state: " << current_state << std::endl;
+
+                        // ensure we stay in CLx state untill we really reached the desired lane!
+                        // otherwise the car might try to switch multiple lanes at once. and while doing that
+                        // even ignore other cars on the lanes it skips!
+                        if (new_lane != lane) {                                                     // first entry to this state
+                            lane = new_lane;
+                            ref_vel = overall_max_speed;
+                        } else if ( (car_d < (2 + 4*lane + 1)) && (car_d > (2 + 4*lane - 1)) ){     // check if we reached the new lane!
+                            current_state = STATES::KEEP_LANE;                                      // done changing lanes. so back to KEEP_LANE state
+                        }
+                        // if neither of the above statements are true, we're still changing lanes. so we just stay in the current CLx state
                     }
 
                     // ====== END check for other cars ======
