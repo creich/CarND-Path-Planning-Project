@@ -66,6 +66,8 @@ LaneState checkLane(int lane, double longitude, double prev_size, vector<Car> ot
             double check_distance = check_car_s - longitude;
 
             // car is in the lane of question ahead of the given Frenet longitude s
+            // we also check try to find the closest car ahead, which is why we update every time we find
+            // a new check_distance smaller than the one we already have
             if (check_car_s > longitude && check_distance < state.distanceToNextCar) {
                 state.isFree = false;
                 state.distanceToNextCar = check_distance;
@@ -243,7 +245,6 @@ int main() {
                             // current possible speed. if so, prepare to witch lanes to the RIGHT
                             // if neither is true, just keep the current lane
 
-                            // TODO maybe set longitude parameter to something behind our current position to get some safty distance before changing lanes
                             LaneState state = checkLane(lane + 1, car_s, prev_size, other_cars);
                             if (state.isFree) {
                                 current_state = STATES::PLCR;
@@ -260,7 +261,6 @@ int main() {
                             // current possible speed. if so, prepare to witch lanes to the LEFT
                             // if neither is true, just keep the current lane
 
-                            // TODO maybe set longitude parameter to something behind our current position to get some safty distance before changing lanes
                             LaneState state = checkLane(lane - 1, car_s, prev_size, other_cars);
                             if (state.isFree) {
                                 current_state = STATES::PLCL;
@@ -305,7 +305,7 @@ int main() {
                     } else if (current_state == STATES::PLCL) {
                         std::cout << "<< << << indicator LEFT" << std::endl;
 
-                        // TODO do some safty checks !!!
+                        // do some safty checks!
                         // first check (and get safe) distance to car direct in front of us!
                         LaneState state = checkLane(lane, car_s, prev_size, other_cars);
                         if (!state.isFree && state.distanceToNextCar < 30) {
@@ -315,7 +315,7 @@ int main() {
                         } else {                                        // only continue changing lanes, if distance to car upfront is safe
                             // we now check car_s - 10 to ensure that we're at least 10m ahead of a possible car in the next lane!
                             LaneState state_left = checkLane(lane - 1, car_s - 10, prev_size, other_cars);
-                            if (state_left.isFree || state_left.distanceToNextCar > 30) {
+                            if (state_left.isFree || state_left.distanceToNextCar > 30 + 10) {
                                 new_lane = lane - 1;
                                 current_state = STATES::CLL;
                             }
@@ -323,7 +323,7 @@ int main() {
                     } else if (current_state == STATES::PLCR) {
                         std::cout << ">> >> >> indicator RIGHT" << std::endl;
 
-                        // TODO do some safty checks !!!
+                        // do some safty checks!
                         // first check (and get safe) distance to car direct in front of us!
                         LaneState state = checkLane(lane, car_s, prev_size, other_cars);
                         if (!state.isFree && state.distanceToNextCar < 30) {
@@ -333,7 +333,7 @@ int main() {
                         }else {                                        // only continue changing lanes, if distance to car upfront is safe
                             // we now check car_s - 10 to ensure that we're at least 10m ahead of a possible car in the next lane!
                             LaneState state_right = checkLane(lane + 1, car_s - 10, prev_size, other_cars);
-                            if (state_right.isFree || state_right.distanceToNextCar > 30) {
+                            if (state_right.isFree || state_right.distanceToNextCar > 30 + 10) {
                                 new_lane = lane + 1;
                                 current_state = STATES::CLR;
                             }
@@ -443,12 +443,12 @@ int main() {
                     for(int i = 1; i <= NUM_WAYPOINTS - previous_path_x.size(); i++) {
                         // slightly adapt vleocity till we reach final ref_vel
                         if (next_vel < ref_vel) {
-                            next_vel += 0.17;
+                            next_vel += 0.15;
                             if (next_vel > ref_vel) {
                                 next_vel = ref_vel;
                             }
                         } else if (next_vel > ref_vel) {
-                            next_vel -= 0.17;
+                            next_vel -= 0.15;
                             if (next_vel < 0) {
                                 next_vel = 0;
                             }
