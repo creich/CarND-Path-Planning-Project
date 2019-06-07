@@ -245,7 +245,7 @@ int main() {
                             // current possible speed. if so, prepare to witch lanes to the RIGHT
                             // if neither is true, just keep the current lane
 
-                            LaneState state = checkLane(lane + 1, car_s, prev_size, other_cars);
+                            LaneState state = checkLane(lane + 1, car_s - 10, prev_size, other_cars);
                             if (state.isFree) {
                                 current_state = STATES::PLCR;
                             } else {
@@ -261,7 +261,7 @@ int main() {
                             // current possible speed. if so, prepare to witch lanes to the LEFT
                             // if neither is true, just keep the current lane
 
-                            LaneState state = checkLane(lane - 1, car_s, prev_size, other_cars);
+                            LaneState state = checkLane(lane - 1, car_s - 10, prev_size, other_cars);
                             if (state.isFree) {
                                 current_state = STATES::PLCL;
                             } else {
@@ -278,8 +278,8 @@ int main() {
                             // if neither is true, just keep the current lane
 
                             LaneState state = checkLane(lane, car_s, prev_size, other_cars);
-                            LaneState state_left = checkLane(lane - 1, car_s, prev_size, other_cars);
-                            LaneState state_right = checkLane(lane + 1, car_s, prev_size, other_cars);
+                            LaneState state_left = checkLane(lane - 1, car_s - 10, prev_size, other_cars);
+                            LaneState state_right = checkLane(lane + 1, car_s - 10, prev_size, other_cars);
                             // prefer takeover on the left side
                             if (state_left.isFree) {
                                 current_state = STATES::PLCL;
@@ -308,9 +308,9 @@ int main() {
                         // do some safty checks!
                         // first check (and get safe) distance to car direct in front of us!
                         LaneState state = checkLane(lane, car_s, prev_size, other_cars);
-                        if (!state.isFree && state.distanceToNextCar < 30) {
+                        if (!state.isFree && state.distanceToNextCar < 20) {
                             current_state = STATES::KEEP_LANE;
-                        } else if (state.isFree || state.distanceToNextCar > 35) {  // maybe the current lane got free again
+                        } else if (state.isFree || state.distanceToNextCar > 50) {  // maybe the current lane got free again
                             current_state = STATES::KEEP_LANE;
                         } else {                                        // only continue changing lanes, if distance to car upfront is safe
                             // we now check car_s - 10 to ensure that we're at least 10m ahead of a possible car in the next lane!
@@ -326,9 +326,9 @@ int main() {
                         // do some safty checks!
                         // first check (and get safe) distance to car direct in front of us!
                         LaneState state = checkLane(lane, car_s, prev_size, other_cars);
-                        if (!state.isFree && state.distanceToNextCar < 30) {
+                        if (!state.isFree && state.distanceToNextCar < 20) {
                             current_state = STATES::KEEP_LANE;
-                        } else if (state.isFree || state.distanceToNextCar > 35) {  // maybe the current lane got free again
+                        } else if (state.isFree || state.distanceToNextCar > 50) {  // maybe the current lane got free again
                             current_state = STATES::KEEP_LANE;
                         }else {                                        // only continue changing lanes, if distance to car upfront is safe
                             // we now check car_s - 10 to ensure that we're at least 10m ahead of a possible car in the next lane!
