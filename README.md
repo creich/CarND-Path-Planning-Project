@@ -1,6 +1,8 @@
 # write up -- CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
-   
+
+![image](screenshot.png)
+
 ## The Task:
 ### Goals
 In this project your goal is to safely navigate around a virtual highway with other traffic that is driving +-10 MPH of the
